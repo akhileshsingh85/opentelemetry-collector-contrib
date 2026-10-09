@@ -5,7 +5,7 @@ change_type: enhancement
 component: cmd/telemetrygen
 
 # A brief description of the change.
-note: Add a profiles generator to telemetrygen with periodic run configuration metrics.
+note: Add a profiles generator to telemetrygen with periodic run configuration metrics and configurable invalid profiles.
 
 # Tracking issue.
 issues: []

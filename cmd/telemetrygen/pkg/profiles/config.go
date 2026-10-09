@@ -17,11 +17,12 @@ import (
 // Config describes the profile generation scenario.
 type Config struct {
 	config.Config
-	NumProfiles   int
-	NumSamples    int
-	StackDepth    int
-	UniqueStacks  int
-	MaxMessageMiB int
+	NumProfiles     int
+	InvalidProfiles int
+	NumSamples      int
+	StackDepth      int
+	UniqueStacks    int
+	MaxMessageMiB   int
 }
 
 func NewConfig() *Config {
@@ -34,6 +35,7 @@ func NewConfig() *Config {
 func (c *Config) Flags(fs *pflag.FlagSet) {
 	c.CommonFlags(fs)
 	fs.IntVar(&c.NumProfiles, "profiles", c.NumProfiles, "Number of profiles to generate in each worker (ignored if duration is provided)")
+	fs.IntVar(&c.InvalidProfiles, "invalid-profiles", c.InvalidProfiles, "Number of intentionally invalid profiles to include in each export batch")
 	fs.IntVar(&c.NumSamples, "samples", c.NumSamples, "Number of samples in each generated profile")
 	fs.IntVar(&c.StackDepth, "stack-depth", c.StackDepth, "Number of locations in each unique stack")
 	fs.IntVar(&c.UniqueStacks, "unique-stacks", c.UniqueStacks, "Number of unique stacks in each profile; capped at the sample count")
@@ -55,6 +57,16 @@ func (c *Config) SetDefaults() {
 
 // Validate checks that the profile scenario can run.
 func (c *Config) Validate() error {
+	if c.InvalidProfiles < 0 {
+		return errors.New("invalid-profiles must be non-negative")
+	}
+	maxInvalidProfiles := 1
+	if c.Batch {
+		maxInvalidProfiles = c.BatchSize
+	}
+	if c.InvalidProfiles > maxInvalidProfiles {
+		return errors.New("invalid-profiles cannot exceed the number of profiles in each export request")
+	}
 	if c.ReportingInterval <= 0 {
 		return errors.New("reporting interval must be greater than 0")
 	}

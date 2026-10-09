@@ -169,9 +169,16 @@ Generate profiles over OTLP/gRPC:
 telemetrygen profiles --otlp-insecure --profiles 10
 ```
 
-The profile payload can be shaped with `--samples`, `--stack-depth`, and `--unique-stacks`. Use `--size` to add string data to each profile, `--rate` or `--duration` to control the load, and `--batch` with `--batch-size` to send multiple profiles in one request. The default maximum gRPC request size is 4 MiB; change it with `--max-message-mib` when sending larger batches.
+The profile payload can be shaped with `--samples`, `--stack-depth`, and `--unique-stacks`. Use `--size` to add string data to each profile, `--rate` or `--duration` to control the load, and `--batch` with `--batch-size` to send multiple profiles in one request. Use `--invalid-profiles` to mark that many profiles in each export request invalid by referencing a missing string-table entry. The default maximum gRPC request size is 4 MiB; change it with `--max-message-mib` when sending larger batches.
 
-The command sends OTLP metrics describing the run at startup and every five minutes by default: `telemetrygen_profiles_workers`, `telemetrygen_profiles_rate` (per worker), `telemetrygen_profiles_batch_enabled`, `telemetrygen_profiles_batch_size` (configured value), and `telemetrygen_profiles_effective_batch_size` (profiles per request; 1 when batching is disabled). Set `--interval` to change the reporting interval. The configured OTLP endpoint must accept metrics as well as profiles.
+The command sends OTLP metrics describing the run at startup and every five minutes by default: `telemetrygen_profiles_workers`, `telemetrygen_profiles_rate` (per worker), `telemetrygen_profiles_batch_enabled`, `telemetrygen_profiles_batch_size` (configured value), `telemetrygen_profiles_effective_batch_size` (profiles per request; 1 when batching is disabled), and `telemetrygen_profiles_invalid_profiles` (invalid profiles per request). Set `--interval` to change the reporting interval. The configured OTLP endpoint must accept metrics as well as profiles.
+
+For example, to put five invalid profiles in every batch of 30:
+
+```console
+telemetrygen profiles --otlp-insecure --duration inf --rate 1 \
+  --batch --batch-size 30 --invalid-profiles 5
+```
 
 ```console
 telemetrygen profiles --otlp-insecure --duration 5m --rate 10 \

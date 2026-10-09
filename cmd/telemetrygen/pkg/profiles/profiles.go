@@ -173,6 +173,7 @@ func buildRunConfigurationMetrics(cfg *Config) pmetricotlp.ExportRequest {
 	addIntGauge(scopeMetrics.Metrics(), "telemetrygen_profiles_batch_enabled", "Whether profile batching is enabled", "1", batchEnabled, now)
 	addIntGauge(scopeMetrics.Metrics(), "telemetrygen_profiles_batch_size", "Configured number of profiles to batch per OTLP export request", "{profile}", int64(cfg.BatchSize), now)
 	addIntGauge(scopeMetrics.Metrics(), "telemetrygen_profiles_effective_batch_size", "Number of profiles in each OTLP export request", "{profile}", int64(batchSize), now)
+	addIntGauge(scopeMetrics.Metrics(), "telemetrygen_profiles_invalid_profiles", "Number of intentionally invalid profiles in each OTLP export request", "{profile}", int64(cfg.InvalidProfiles), now)
 	return pmetricotlp.NewExportRequestFromMetrics(metrics)
 }
 
@@ -231,7 +232,7 @@ func (w *worker) generate() {
 			}
 		}
 
-		profiles := buildProfiles(w.config, batchSize, w.sequence)
+		profiles := buildProfiles(w.config, batchSize, w.config.InvalidProfiles, w.sequence)
 		request := pprofileotlp.NewExportRequestFromProfiles(profiles)
 		ctx, cancel := context.WithTimeout(context.Background(), w.config.Timeout)
 		if headers := w.config.GetHeaders(); len(headers) > 0 {
@@ -253,7 +254,7 @@ func (w *worker) generate() {
 	w.logger.Info("profiles generated", zap.Int("profiles", generated))
 }
 
-func buildProfiles(cfg *Config, count int, sequence *atomic.Uint64) pprofile.Profiles {
+func buildProfiles(cfg *Config, count, invalidCount int, sequence *atomic.Uint64) pprofile.Profiles {
 	profiles := pprofile.NewProfiles()
 	dictionary := profiles.Dictionary()
 	dictionary.MappingTable().AppendEmpty()
@@ -311,6 +312,10 @@ func buildProfiles(cfg *Config, count int, sequence *atomic.Uint64) pprofile.Pro
 			sample := profile.Samples().AppendEmpty()
 			sample.SetStackIndex(stackIndices[sampleIndex%len(stackIndices)])
 			sample.Values().Append(10_000_000)
+		}
+		if i < invalidCount {
+			// Keep the protobuf encodable but make its sample type reference a missing string.
+			profile.SampleType().SetTypeStrindex(int32(dictionary.StringTable().Len()))
 		}
 	}
 	return profiles
