@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -198,14 +199,15 @@ func addDoubleGauge(metrics pmetric.MetricSlice, name, description, unit string,
 }
 
 type worker struct {
-	config   *Config
-	client   pprofileotlp.GRPCClient
-	conn     *grpc.ClientConn
-	limit    rate.Limit
-	running  *atomic.Bool
-	sequence *atomic.Uint64
-	logger   *zap.Logger
-	wg       *sync.WaitGroup
+	config           *Config
+	client           pprofileotlp.GRPCClient
+	conn             *grpc.ClientConn
+	limit            rate.Limit
+	running          *atomic.Bool
+	sequence         *atomic.Uint64
+	invalidMutations invalidProfileMutationGenerator
+	logger           *zap.Logger
+	wg               *sync.WaitGroup
 }
 
 func (w *worker) generate() {
@@ -232,7 +234,7 @@ func (w *worker) generate() {
 			}
 		}
 
-		profiles := buildProfiles(w.config, batchSize, w.config.InvalidProfiles, w.sequence)
+		profiles := buildProfiles(w.config, batchSize, w.config.InvalidProfiles, w.sequence, &w.invalidMutations)
 		request := pprofileotlp.NewExportRequestFromProfiles(profiles)
 		ctx, cancel := context.WithTimeout(context.Background(), w.config.Timeout)
 		if headers := w.config.GetHeaders(); len(headers) > 0 {
@@ -254,7 +256,7 @@ func (w *worker) generate() {
 	w.logger.Info("profiles generated", zap.Int("profiles", generated))
 }
 
-func buildProfiles(cfg *Config, count, invalidCount int, sequence *atomic.Uint64) pprofile.Profiles {
+func buildProfiles(cfg *Config, count, invalidCount int, sequence *atomic.Uint64, invalidMutations *invalidProfileMutationGenerator) pprofile.Profiles {
 	profiles := pprofile.NewProfiles()
 	dictionary := profiles.Dictionary()
 	dictionary.MappingTable().AppendEmpty()
@@ -313,12 +315,70 @@ func buildProfiles(cfg *Config, count, invalidCount int, sequence *atomic.Uint64
 			sample.SetStackIndex(stackIndices[sampleIndex%len(stackIndices)])
 			sample.Values().Append(10_000_000)
 		}
-		if i < invalidCount {
-			// Keep the protobuf encodable but make its sample type reference a missing string.
-			profile.SampleType().SetTypeStrindex(int32(dictionary.StringTable().Len()))
-		}
+	}
+	for i, mutate := range invalidMutations.next(invalidCount) {
+		mutate(scopeProfiles.Profiles().At(i), dictionary)
 	}
 	return profiles
+}
+
+type invalidProfileMutationGenerator struct {
+	mutations []func(pprofile.Profile, pprofile.ProfilesDictionary)
+	index     int
+}
+
+func (g *invalidProfileMutationGenerator) next(count int) []func(pprofile.Profile, pprofile.ProfilesDictionary) {
+	if count == 0 {
+		return nil
+	}
+	if len(g.mutations) == 0 {
+		g.mutations = []func(pprofile.Profile, pprofile.ProfilesDictionary){
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.SampleType().SetTypeStrindex(int32(dictionary.StringTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.SampleType().SetUnitStrindex(int32(dictionary.StringTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.PeriodType().SetTypeStrindex(int32(dictionary.StringTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.PeriodType().SetUnitStrindex(int32(dictionary.StringTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.AttributeIndices().Append(int32(dictionary.AttributeTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.Samples().At(0).SetStackIndex(int32(dictionary.StackTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.Samples().At(0).AttributeIndices().Append(int32(dictionary.AttributeTable().Len()))
+			},
+			func(profile pprofile.Profile, dictionary pprofile.ProfilesDictionary) {
+				profile.Samples().At(0).SetLinkIndex(int32(dictionary.LinkTable().Len()))
+			},
+			func(profile pprofile.Profile, _ pprofile.ProfilesDictionary) {
+				profile.Samples().At(0).Values().Append(10_000_000)
+			},
+		}
+		g.shuffle()
+	}
+	selected := make([]func(pprofile.Profile, pprofile.ProfilesDictionary), count)
+	for i := range count {
+		if g.index == len(g.mutations) {
+			g.shuffle()
+		}
+		selected[i] = g.mutations[g.index]
+		g.index++
+	}
+	return selected
+}
+
+func (g *invalidProfileMutationGenerator) shuffle() {
+	rand.Shuffle(len(g.mutations), func(i, j int) {
+		g.mutations[i], g.mutations[j] = g.mutations[j], g.mutations[i]
+	})
+	g.index = 0
 }
 
 func buildStacks(dictionary pprofile.ProfilesDictionary, count, depth int) []int32 {
