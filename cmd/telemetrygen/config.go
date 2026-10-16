@@ -14,21 +14,23 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen/pkg/logs"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen/pkg/metrics"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen/pkg/profiles"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen/pkg/profiling"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen/pkg/traces"
 )
 
 var (
-	tracesCfg   *traces.Config
-	metricsCfg  *metrics.Config
-	logsCfg     *logs.Config
-	profilesCfg *profiles.Config
+	tracesCfg    *traces.Config
+	metricsCfg   *metrics.Config
+	logsCfg      *logs.Config
+	profilesCfg  *profiles.Config
+	profilingCfg *profiling.Config
 )
 
 // rootCmd is the root command on which will be run children commands
 var rootCmd = &cobra.Command{
 	Use:     "telemetrygen",
-	Short:   "Telemetrygen simulates a client generating traces, metrics, logs, and profiles",
-	Example: "telemetrygen metrics --otlp-insecure --metrics 1\ntelemetrygen traces --otlp-insecure --traces 1\ntelemetrygen logs --otlp-insecure --logs 1\ntelemetrygen profiles --otlp-insecure --profiles 1",
+	Short:   "Telemetrygen simulates a client generating traces, metrics, logs, profiles, and profiling logs",
+	Example: "telemetrygen metrics --otlp-insecure --metrics 1\ntelemetrygen traces --otlp-insecure --traces 1\ntelemetrygen logs --otlp-insecure --logs 1\ntelemetrygen profiles --otlp-insecure --profiles 1\nSPLUNK_PROFILER_ENABLED=true telemetrygen profiling --duration 30s",
 }
 
 // tracesCmd is the command responsible for sending traces
@@ -71,8 +73,17 @@ var profilesCmd = &cobra.Command{
 	},
 }
 
+var profilingCmd = &cobra.Command{
+	Use:     "profiling",
+	Short:   "Simulates Splunk AlwaysOn Profiling data sent as OTLP logs",
+	Example: "SPLUNK_PROFILER_ENABLED=true telemetrygen profiling --otlp-http --duration 30s",
+	RunE: func(*cobra.Command, []string) error {
+		return profiling.Start(profilingCfg)
+	},
+}
+
 func init() {
-	rootCmd.AddCommand(metricsCmd, tracesCmd, logsCmd, profilesCmd)
+	rootCmd.AddCommand(metricsCmd, tracesCmd, logsCmd, profilesCmd, profilingCmd)
 
 	tracesCfg = traces.NewConfig()
 	tracesCfg.Flags(tracesCmd.Flags())
@@ -85,6 +96,9 @@ func init() {
 
 	profilesCfg = profiles.NewConfig()
 	profilesCfg.Flags(profilesCmd.Flags())
+
+	profilingCfg = profiling.NewConfig()
+	profilingCfg.Flags(profilingCmd.Flags())
 
 	// Disabling completion command for end user
 	// https://github.com/spf13/cobra/blob/master/shell_completions.md

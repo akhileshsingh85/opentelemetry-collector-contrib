@@ -3,6 +3,7 @@ module github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetryge
 go 1.26.0
 
 require (
+	github.com/google/pprof v0.0.0-20260604005048-7023385849c0
 	github.com/lightstep/go-expohisto v1.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10

@@ -1,0 +1,5 @@
+change_type: bug_fix
+component: cmd/telemetrygen
+note: Retry failed profiling log exports after a short delay and persist collector errors to a local file.
+issues: [51908]
+change_logs: [user]

@@ -1,0 +1,5 @@
+change_type: enhancement
+component: cmd/telemetrygen
+note: Generate Splunk AlwaysOn Profiling OTLP log records with batched exports and a configurable percentage of invalid profile payloads; report export counts and errors as OTLP metrics.
+issues: [51908]
+change_logs: [user]
